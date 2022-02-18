@@ -1,0 +1,15 @@
+#!/bin/sh
+
+git for-each-ref --shell --sort=-committerdate --format='date=%(committerdate:short) branch=%(refname:short)' refs/heads/ | \
+while read entry
+do
+	eval $entry;
+
+	printf "%-15s %s\n" "$date" "$branch"
+
+	desc=`git config branch.${branch}.description`
+	if [ -n "$desc" ]; then
+		echo $desc
+	fi
+done
+

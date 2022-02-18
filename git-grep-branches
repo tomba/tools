@@ -1,0 +1,25 @@
+#!/bin/sh
+
+git for-each-ref --shell --sort=-committerdate --format='branch=%(refname:short)' refs/heads/ | \
+while read entry
+do
+	eval $entry;
+
+	#printf "%s\n" "$branch"
+
+	N=10
+	STR="dma_buf_test_data"
+
+	res=$(git log --oneline -G"$STR" "$branch"~"$N".."$branch")
+
+	if [ -n "$res" ]; then
+		printf "== %s ==\n" "$branch"
+		echo "$res"
+	fi
+
+#	desc=`git config branch.${branch}.description`
+#	if [ -n "$desc" ]; then
+#		echo $desc
+#	fi
+done
+

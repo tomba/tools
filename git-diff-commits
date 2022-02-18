@@ -1,0 +1,5 @@
+#!/bin/bash
+
+SHOW_PARAMS="--pretty=format:%aN%n%n%B"
+
+diff --color=always --palette='ad=38;5;154:de=38;2;255;100;100' <(git --no-pager show $SHOW_PARAMS $1) <(git --no-pager show $SHOW_PARAMS $2)

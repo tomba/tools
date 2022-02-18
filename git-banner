@@ -1,0 +1,24 @@
+#!/bin/bash
+
+columns=60
+line="$*"
+
+if [ -n "$line" ]; then
+	pad1=$(( (columns - ${#line}) / 2))
+	pad2=$(( columns - ${#line} - $pad1 ))
+
+	pad1=$(printf %${pad1}s |tr " " "=")
+	pad2=$(printf %${pad2}s |tr " " "=")
+
+	output=$(echo $pad1 $line $pad2)
+else
+	columns=$((columns + 2))
+	output=$(printf %${columns}s |tr " " "=")
+fi
+
+file=".git-banner-$line-$(date +%s)"
+file=${file/ /-}
+
+touch "$file"
+git add -f "$file"
+git commit --no-verify "$file" -m "$output"
