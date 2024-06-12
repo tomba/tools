@@ -1,6 +1,6 @@
 #!/bin/sh
 
-git for-each-ref --shell --sort=-committerdate --format='date=%(committerdate:short) branch=%(refname:short)' refs/heads/ | \
+git for-each-ref --shell --sort=-committerdate --format='date=%(committerdate:short) branch=%(refname)' refs/ | \
 while read entry
 do
 	eval $entry;

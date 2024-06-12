@@ -16,9 +16,9 @@ else
 	output=$(printf %${columns}s |tr " " "=")
 fi
 
-file=".git-banner-$line-$(date +%s)"
-file=${file/ /-}
+#file=".git-banner-$line-$(date +%s)"
+#file=${file/ /-}
 
-touch "$file"
-git add -f "$file"
-git commit --no-verify "$file" -m "$output"
+#touch "$file"
+#git add -f "$file"
+git commit --allow-empty --no-verify -m "$output"
