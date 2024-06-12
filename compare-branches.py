@@ -1,230 +1,223 @@
 #!/usr/bin/python3
 
-import subprocess
-from subprocess import PIPE
-import pygit2
-import pickle
+# pylint: disable=missing-module-docstring, missing-function-docstring
+
 import csv
+import pickle
+import subprocess
 import time
+
 from collections import defaultdict
 from pathlib import Path
+from subprocess import PIPE
+
+import pygit2
 
 # Branches (ranges) we're interested in
 BRANCHES = {
-	"Tomi": "v5.16..streams/work",
-	"Laurent": "v5.17-rc4..laurent-gitlab/pinchartl/v5.17/streams",
+    'Tomi': 'renesas-geert/master..renesas/work',
+    'Upstream': 'v6.8..v6.9',
 }
 
 # If set, list only commits in the given branch
-#SHOW_ONLY_BRANCH = "Tomi"
+#SHOW_ONLY_BRANCH = 'Tomi'
 SHOW_ONLY_BRANCH = None
 
 # Use title matching in addition to commit ID and patch ID
-MATCH_BY_TITLE = False
+MATCH_BY_TITLE = True
 
 # Drop commits that are found in all branches
 DROP_COMMON = False
 
 # output file
-OUT_FILE = "branch-status.csv"
+OUT_FILE = 'branch-status.csv'
 
 # File used to cache data between runs
-COMMIT_CACHE_FILE = Path.home() / ".cache/patch-status.cache"
+COMMIT_CACHE_FILE = Path.home() / '.cache/patch-status.cache'
 
-repo = pygit2.Repository(".")
+repo = pygit2.Repository('.')
 
 def runasync(cmd):
-	return subprocess.Popen(cmd, stdout=PIPE, shell=True, universal_newlines=True)
+    return subprocess.Popen(cmd, stdout=PIPE, shell=True, universal_newlines=True)
 
 def run(cmd):
-	return subprocess.run(cmd, check=True, stdout=PIPE, shell=True, universal_newlines=True).stdout
+    return subprocess.run(cmd, check=True, stdout=PIPE, shell=True, universal_newlines=True).stdout
 
-# commitid : { "patchid": patch-id, "title": title, "files": [ files ] }
+# commitid : { 'patchid': patch-id, 'title': title, 'files': [ files ] }
 commit_map = {}
 
 def get_entry(oid):
-	id = str(oid)
-	d = commit_map.get(id)
-	if d == None:
-		d = {}
-		commit_map[id] = d
-	return d
+    id = str(oid)
+    d = commit_map.get(id)
+    if d is None:
+        d = {}
+        commit_map[id] = d
+    return d
 
 def get_patch_id(oid):
-	d = get_entry(oid)
+    d = get_entry(oid)
 
-	id = d.get("patchid")
-	if id == None:
-		id = run("git show --no-decorate {} | git patch-id --stable".format(oid)).strip().split(" ")[0]
-		d["patchid"] = id
+    id = d.get('patchid')
+    if id is None:
+        id = run('git show --no-decorate {} | git patch-id --stable'.format(oid)).strip().split(' ')[0]
+        d['patchid'] = id
 
-	return id
+    return id
 
 def get_title(oid):
-	d = get_entry(oid)
+    d = get_entry(oid)
 
-	title = d.get("title")
-	if title == None:
-		title = repo.get(oid).message.split("\n", 1)[0]
-		d["title"] = title
+    title = d.get('title')
+    if title is None:
+        title = repo.get(oid).message.split('\n', 1)[0]
+        d['title'] = title
 
-	return title
+    return title
 
 def get_files(oid):
-	d = get_entry(oid)
+    d = get_entry(oid)
 
-	files = d.get("files")
-	if files == None:
-		files = run("git diff-tree --no-commit-id --name-only -r {}".format(oid))
-		files = files.rstrip().split("\n")
-		d["files"] = files
+    files = d.get('files')
+    if files is None:
+        files = run(f'git diff-tree --no-commit-id --name-only -r {oid}')
+        files = files.rstrip().split('\n')
+        d['files'] = files
 
-	return files
+    return files
 
 def load_cache():
-	global commit_map
+    global commit_map
 
-	if COMMIT_CACHE_FILE.is_file():
-		with open(COMMIT_CACHE_FILE, 'rb') as handle:
-			commit_map = pickle.load(handle)
-		print("Cache loaded with {} commits".format(len(commit_map)))
+    if COMMIT_CACHE_FILE.is_file():
+        with open(COMMIT_CACHE_FILE, 'rb') as handle:
+            commit_map = pickle.load(handle)
+        print(f'Cache loaded with {len(commit_map)} commits')
 
 def save_cache():
-	global commit_map
+    global commit_map
 
-	with open(COMMIT_CACHE_FILE, 'wb') as handle:
-		pickle.dump(commit_map, handle)
+    with open(COMMIT_CACHE_FILE, 'wb') as handle:
+        pickle.dump(commit_map, handle)
 
-	print("Cache saved with {} commits".format(len(commit_map)))
+    print(f'Cache saved with {len(commit_map)} commits')
 
 def collect_commits(range):
-	print("Collecting commits {}".format(range))
+    print(f'Collecting commits {range}')
 
-	list = []
+    list = []
 
-	proc = runasync("git rev-list --no-merges {}".format(range))
+    proc = runasync(f'git rev-list --no-merges {range}')
 
-	while True:
-		line = proc.stdout.readline()
-		if line == '' and proc.poll() != None:
-			break
+    while True:
+        line = proc.stdout.readline()
+        if line == '' and proc.poll() is not None:
+            break
 
-		line = line.rstrip()
+        line = line.rstrip()
 
-		list.append(pygit2.Oid(hex=line))
+        list.append(pygit2.Oid(hex=line))
 
-	print("  Found {} commits".format(len(list)))
+    print('  Found {} commits'.format(len(list)))
 
-	return list;
+    return list
 
 def main():
-	load_cache()
+    load_cache()
 
-	branches = { name: collect_commits(range) for name,range in BRANCHES.items() }
+    branches = { name: collect_commits(range) for name,range in BRANCHES.items() }
 
-	flattened = collect_commits(" ".join(BRANCHES.values()))
+    flattened = collect_commits(' '.join(BRANCHES.values()))
 
-	print("generating { patchid: [commitid, ...] }")
-	patchid_map = defaultdict(set)
-	i = 0
-	timestamp = 0
-	for cid in flattened:
-		if time.time() > timestamp + 10:
-			print("  {}/{}".format(i, len(flattened)))
-			timestamp = time.time()
-		i += 1
-		pid = get_patch_id(cid)
-		patchid_map[pid].add(cid)
-	print("  {}/{}".format(i, len(flattened)))
+    print('generating { patchid: [commitid, ...] }')
+    patchid_map = defaultdict(set)
+    i = 0
+    timestamp = 0
+    for cid in flattened:
+        if time.time() > timestamp + 10:
+            print('  {}/{}'.format(i, len(flattened)))
+            timestamp = time.time()
+        i += 1
+        pid = get_patch_id(cid)
+        patchid_map[pid].add(cid)
+    print(f'  {i}/{len(flattened)}')
 
-	print("generating { title: [commitid, ...] }")
-	title_map = defaultdict(set)
-	i = 0
-	timestamp = 0
-	for cid in flattened:
-		if time.time() > timestamp + 10:
-			print("  {}/{}".format(i, len(flattened)))
-			timestamp = time.time()
-		i += 1
-		title = get_title(cid)
-		title_map[title].add(cid)
-	print("  {}/{}".format(i, len(flattened)))
+    print('generating { title: [commitid, ...] }')
+    title_map = defaultdict(set)
+    i = 0
+    timestamp = 0
+    for cid in flattened:
+        if time.time() > timestamp + 10:
+            print(f'  {i}/{len(flattened)}')
+            timestamp = time.time()
+        i += 1
+        title = get_title(cid)
+        title_map[title].add(cid)
+    print(f'  {i}/{len(flattened)}')
 
-	save_cache()
+    save_cache()
 
-	print("Creating " + OUT_FILE)
+    print(f'Creating {OUT_FILE}')
 
-	num_in_target = defaultdict(int)
+    num_in_target = defaultdict(int)
 
-	def get_upstream_range(oid):
-		assert(oid in flattened)
+    def search_for_commit_in_branch(oid, branch_name):
+        if oid in branches[branch_name]:
+            return (oid, 'OID')
 
-		for k in UPSTREAMS:
-			if oid in upstream_commits[k]:
-				return k
+        pid = get_patch_id(oid)
+        for c in patchid_map.get(pid, []):
+            if c in branches[branch_name]:
+                return (c, 'PatchID')
 
-		assert(False)
+        if MATCH_BY_TITLE:
+            title = get_title(oid)
+            for c in title_map.get(title, []):
+                if c in branches[branch_name]:
+                    return (c, 'Title')
 
-	def search_for_commit_in_branch(oid, branch_name):
-		if oid in branches[branch_name]:
-			return (oid, "OID")
+        return (None, None)
 
-		pid = get_patch_id(oid)
-		for c in patchid_map.get(pid, []):
-			if c in branches[branch_name]:
-				return (c, "PatchID")
+    with open(OUT_FILE, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile, quoting=csv.QUOTE_NONNUMERIC)
 
-		if MATCH_BY_TITLE:
-			title = get_title(oid)
-			for c in title_map.get(title, []):
-				if c in branches[branch_name]:
-					return (c, "Title")
+        cols = []
+        for b in branches:
+            cols += [b, b]
 
-		return (None, None)
+        writer.writerow(['Title', *cols])
 
-	with open(OUT_FILE, 'w', newline='') as csvfile:
-		writer = csv.writer(csvfile, quoting=csv.QUOTE_NONNUMERIC)
+        if SHOW_ONLY_BRANCH:
+            commit_list = branches[SHOW_ONLY_BRANCH]
+        else:
+            commit_list = flattened
 
-		cols = []
-		for b in branches:
-			cols += [b, b]
+        timestamp = 0
+        for i, oid in enumerate(commit_list):
+            if time.time() > timestamp + 10:
+                print(f'  {i}/{len(commit_list)}')
+                timestamp = time.time()
 
-		writer.writerow(["Title", *cols])
+            found = [search_for_commit_in_branch(oid, b) for b in branches]
 
-		if SHOW_ONLY_BRANCH:
-			commit_list = branches[SHOW_ONLY_BRANCH]
-		else:
-			commit_list = flattened
+            is_common = all(x != (None, None) for x in found)
 
-		timestamp = 0
-		for i, oid in enumerate(commit_list):
-			if time.time() > timestamp + 10:
-				print("  {}/{}".format(i, len(commit_list)))
-				timestamp = time.time()
+            if DROP_COMMON and is_common:
+                continue
 
-			commit = repo.get(oid)
+            columns = [c for l in found for c in l]
 
-			found = [search_for_commit_in_branch(oid, b) for b in branches]
+            data = [ get_title(oid), *columns ]
 
-			is_common = all(x != (None, None) for x in found)
+            writer.writerow(data)
 
-			if DROP_COMMON and is_common:
-				continue
+        print(f'  {len(commit_list)}/{len(commit_list)}')
 
-			columns = [c for l in found for c in l]
+    save_cache()
 
-			data = [ get_title(oid), *columns ]
-
-			writer.writerow(data)
-
-		print("  {}/{}".format(len(commit_list), len(commit_list)))
-
-	save_cache()
-
-	print("Total {} commits".format(len(commit_list)))
-	for k,v in num_in_target.items():
-		print("{}: {}".format(k, v))
+    print(f'Total {len(commit_list)} commits')
+    for k,v in num_in_target.items():
+        print(f'{k}: {v}')
 
 
-if __name__=="__main__":
+if __name__=='__main__':
     main()
