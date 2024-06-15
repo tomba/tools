@@ -15,6 +15,7 @@ from subprocess import PIPE
 BRANCHES = {
     'rpi': 'v6.8-rc2..rpi/cfe-streams',
     'up': 'v6.9-rc7..b4/rp1-cfe',
+    'rpi-old': '8c64f4cdf4e6..rpi/cfe-streams-20240307',
 
 #    'Tomi': 'renesas-geert/master..renesas/work',
     #'Upstream': 'renesas-geert/master..v6.9',
@@ -22,8 +23,8 @@ BRANCHES = {
 }
 
 # If set, list only commits in the given branch
-#SHOW_ONLY_BRANCH = 'Tomi'
 SHOW_ONLY_BRANCH = None
+#SHOW_ONLY_BRANCH = 'rpi'
 
 # Use title matching in addition to commit ID and patch ID
 MATCH_BY_TITLE = True
@@ -121,7 +122,7 @@ def main():
 
     branches = { name: collect_commits(range) for name,range in BRANCHES.items() }
 
-    flattened = collect_commits(' '.join(BRANCHES.values()))
+    flattened = [item for sublist in branches.values() for item in sublist]
 
     print('Generating database')
 
