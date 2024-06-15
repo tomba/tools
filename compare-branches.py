@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# pylint: disable=missing-module-docstring, missing-function-docstring
+# pylint: disable=missing-module-docstring, missing-function-docstring, missing-class-docstring
 
 import csv
 import pickle
@@ -11,12 +11,14 @@ from collections import defaultdict
 from pathlib import Path
 from subprocess import PIPE
 
-import pygit2
-
 # Branches (ranges) we're interested in
 BRANCHES = {
-    'Tomi': 'renesas-geert/master..renesas/work',
-    'Upstream': 'v6.8..v6.9',
+    'rpi': 'v6.8-rc2..rpi/cfe-streams',
+    'up': 'v6.9-rc7..b4/rp1-cfe',
+
+#    'Tomi': 'renesas-geert/master..renesas/work',
+    #'Upstream': 'renesas-geert/master..v6.9',
+#    'Upstream': 'v6.3..v6.4',
 }
 
 # If set, list only commits in the given branch
@@ -35,78 +37,68 @@ OUT_FILE = 'branch-status.csv'
 # File used to cache data between runs
 COMMIT_CACHE_FILE = Path.home() / '.cache/patch-status.cache'
 
-repo = pygit2.Repository('.')
-
 def runasync(cmd):
     return subprocess.Popen(cmd, stdout=PIPE, shell=True, universal_newlines=True)
 
 def run(cmd):
     return subprocess.run(cmd, check=True, stdout=PIPE, shell=True, universal_newlines=True).stdout
 
-# commitid : { 'patchid': patch-id, 'title': title, 'files': [ files ] }
-commit_map = {}
+class CommitCache:
+    def __init__(self) -> None:
+        # commitid : { 'patchid': patch-id, 'title': title, 'files': [ files ] }
+        self.commit_map = {}
+        # patchid : [ commitid, commitid, ...]
+        self.patchid_idx: dict[str, list[str]] = defaultdict(list)
+        # title : [ commitid, commitid, ...]
+        self.title_idx: dict[str, list[str]] = defaultdict(list)
 
-def get_entry(oid):
-    id = str(oid)
-    d = commit_map.get(id)
-    if d is None:
-        d = {}
-        commit_map[id] = d
-    return d
+    def add_commit(self, commitid: str):
+        if commitid in self.commit_map:
+            return
 
-def get_patch_id(oid):
-    d = get_entry(oid)
+        patchid = run(f'git show --no-decorate {commitid} | git patch-id --stable').strip().split(' ')[0]
+        title = run(f'git log --format=%s -n 1 {commitid}').strip()
+        #files = run(f'git diff-tree --no-commit-id --name-only -r {commitid}').rstrip().split('\n')
+        files = []
 
-    id = d.get('patchid')
-    if id is None:
-        id = run('git show --no-decorate {} | git patch-id --stable'.format(oid)).strip().split(' ')[0]
-        d['patchid'] = id
+        self.commit_map[commitid] = { 'patchid': patchid, 'title': title, 'files': files }
 
-    return id
+        self.patchid_idx[patchid].append(commitid)
+        self.title_idx[title].append(commitid)
 
-def get_title(oid):
-    d = get_entry(oid)
+    def get_patch_id(self, commitid: str) -> str:
+        return self.commit_map[commitid]['patchid']
 
-    title = d.get('title')
-    if title is None:
-        title = repo.get(oid).message.split('\n', 1)[0]
-        d['title'] = title
+    def get_title(self, commitid: str) -> str:
+        return self.commit_map[commitid]['title']
 
-    return title
+    def get_patch_id_commits(self, patchid: str) -> list[str]:
+        return self.patchid_idx[patchid]
 
-def get_files(oid):
-    d = get_entry(oid)
+    def get_title_commits(self, title: str) -> list[str]:
+        return self.title_idx[title]
 
-    files = d.get('files')
-    if files is None:
-        files = run(f'git diff-tree --no-commit-id --name-only -r {oid}')
-        files = files.rstrip().split('\n')
-        d['files'] = files
+    def load(self):
+        if COMMIT_CACHE_FILE.is_file():
+            with open(COMMIT_CACHE_FILE, 'rb') as handle:
+                data = pickle.load(handle)
+                self.commit_map, self.patchid_idx, self.title_idx = data
+            print(f'Cache loaded with {len(self.commit_map)} commits')
 
-    return files
+    def save(self):
+        with open(COMMIT_CACHE_FILE, 'wb') as handle:
+            data = (self.commit_map, self.patchid_idx, self.title_idx)
+            pickle.dump(data, handle)
 
-def load_cache():
-    global commit_map
+        print(f'Cache saved with {len(self.commit_map)} commits')
 
-    if COMMIT_CACHE_FILE.is_file():
-        with open(COMMIT_CACHE_FILE, 'rb') as handle:
-            commit_map = pickle.load(handle)
-        print(f'Cache loaded with {len(commit_map)} commits')
 
-def save_cache():
-    global commit_map
+def collect_commits(commitrange):
+    print(f'Collecting commits {commitrange}: ', end='')
 
-    with open(COMMIT_CACHE_FILE, 'wb') as handle:
-        pickle.dump(commit_map, handle)
+    proc = runasync(f'git rev-list --no-merges {commitrange}')
 
-    print(f'Cache saved with {len(commit_map)} commits')
-
-def collect_commits(range):
-    print(f'Collecting commits {range}')
-
-    list = []
-
-    proc = runasync(f'git rev-list --no-merges {range}')
+    commits = []
 
     while True:
         line = proc.stdout.readline()
@@ -115,63 +107,50 @@ def collect_commits(range):
 
         line = line.rstrip()
 
-        list.append(pygit2.Oid(hex=line))
+        commits.append(line)
 
-    print('  Found {} commits'.format(len(list)))
+    print(f'{len(commits)} commits')
 
-    return list
+    return commits
+
 
 def main():
-    load_cache()
+    cache = CommitCache()
+
+    cache.load()
 
     branches = { name: collect_commits(range) for name,range in BRANCHES.items() }
 
     flattened = collect_commits(' '.join(BRANCHES.values()))
 
-    print('generating { patchid: [commitid, ...] }')
-    patchid_map = defaultdict(set)
-    i = 0
-    timestamp = 0
-    for cid in flattened:
-        if time.time() > timestamp + 10:
-            print('  {}/{}'.format(i, len(flattened)))
-            timestamp = time.time()
-        i += 1
-        pid = get_patch_id(cid)
-        patchid_map[pid].add(cid)
-    print(f'  {i}/{len(flattened)}')
+    print('Generating database')
 
-    print('generating { title: [commitid, ...] }')
-    title_map = defaultdict(set)
     i = 0
     timestamp = 0
-    for cid in flattened:
+    for commitid in flattened:
         if time.time() > timestamp + 10:
             print(f'  {i}/{len(flattened)}')
             timestamp = time.time()
         i += 1
-        title = get_title(cid)
-        title_map[title].add(cid)
+        cache.add_commit(commitid)
     print(f'  {i}/{len(flattened)}')
 
-    save_cache()
+    cache.save()
 
     print(f'Creating {OUT_FILE}')
 
-    num_in_target = defaultdict(int)
+    def search_for_commit_in_branch(commitid, branch_name):
+        if commitid in branches[branch_name]:
+            return (commitid, 'CommitID')
 
-    def search_for_commit_in_branch(oid, branch_name):
-        if oid in branches[branch_name]:
-            return (oid, 'OID')
-
-        pid = get_patch_id(oid)
-        for c in patchid_map.get(pid, []):
+        pid = cache.get_patch_id(commitid)
+        for c in cache.get_patch_id_commits(pid):
             if c in branches[branch_name]:
                 return (c, 'PatchID')
 
         if MATCH_BY_TITLE:
-            title = get_title(oid)
-            for c in title_map.get(title, []):
+            title = cache.get_title(commitid)
+            for c in cache.get_title_commits(title):
                 if c in branches[branch_name]:
                     return (c, 'Title')
 
@@ -192,12 +171,12 @@ def main():
             commit_list = flattened
 
         timestamp = 0
-        for i, oid in enumerate(commit_list):
+        for i, commitid in enumerate(commit_list):
             if time.time() > timestamp + 10:
                 print(f'  {i}/{len(commit_list)}')
                 timestamp = time.time()
 
-            found = [search_for_commit_in_branch(oid, b) for b in branches]
+            found = [search_for_commit_in_branch(commitid, b) for b in branches]
 
             is_common = all(x != (None, None) for x in found)
 
@@ -206,17 +185,14 @@ def main():
 
             columns = [c for l in found for c in l]
 
-            data = [ get_title(oid), *columns ]
+            data = [ cache.get_title(commitid), *columns ]
 
             writer.writerow(data)
 
         print(f'  {len(commit_list)}/{len(commit_list)}')
 
-    save_cache()
-
+    print(f'Created {OUT_FILE}')
     print(f'Total {len(commit_list)} commits')
-    for k,v in num_in_target.items():
-        print(f'{k}: {v}')
 
 
 if __name__=='__main__':
