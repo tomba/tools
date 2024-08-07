@@ -14,6 +14,13 @@ args = parser.parse_args()
 def shorten_commitid(commitid):
     return range_compare.run(f'git rev-parse --short {commitid}')
 
+def is_empty_commit(commitid):
+    # XXX is there a better way to detect an empty commit?
+    t1 = range_compare.run(f'git rev-parse {commitid}^{{tree}}')
+    t2 = range_compare.run(f'git rev-parse {commitid}^^{{tree}}')
+
+    return t1 == t2
+
 def main():
     head = range_compare.run(f'git rev-list -1 {args.range}')
     merge_base = range_compare.run(f'git merge-base {head} {args.upstream}')
@@ -31,6 +38,10 @@ def main():
 
     for data in datas:
         commitid = shorten_commitid(data[0])
+
+        if is_empty_commit(commitid):
+            continue
+
         title = data[1]
 
         print(commitid, title)
