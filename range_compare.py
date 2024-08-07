@@ -103,11 +103,11 @@ def collect_commits(commitrange):
 def shorten_commitid(commitid):
     return run(f'git rev-parse --short {commitid}')
 
-def range_compare(BRANCHES, SHOW_ONLY_BRANCH, MATCH_BY_TITLE, DROP_COMMON):
+def range_compare(branches, show_only_branch, match_by_title, drop_common):
     # Collect commits
 
     # { branch-name: [commits]}
-    branches = { name: collect_commits(range) for name,range in BRANCHES.items() }
+    branches = { name: collect_commits(range) for name,range in branches.items() }
 
     # Flattened list of all commits
     flattened = [item for sublist in branches.values() for item in sublist]
@@ -143,7 +143,7 @@ def range_compare(BRANCHES, SHOW_ONLY_BRANCH, MATCH_BY_TITLE, DROP_COMMON):
             if c in branches[branch_name]:
                 return (c, 'PatchID')
 
-        if MATCH_BY_TITLE:
+        if match_by_title:
             title = cache.get_title(commitid)
             for c in cache.get_title_commits(title):
                 if c in branches[branch_name]:
@@ -153,8 +153,8 @@ def range_compare(BRANCHES, SHOW_ONLY_BRANCH, MATCH_BY_TITLE, DROP_COMMON):
 
     # Search commits
 
-    if SHOW_ONLY_BRANCH:
-        commit_list = branches[SHOW_ONLY_BRANCH]
+    if show_only_branch:
+        commit_list = branches[show_only_branch]
     else:
         commit_list = flattened
 
@@ -177,7 +177,7 @@ def range_compare(BRANCHES, SHOW_ONLY_BRANCH, MATCH_BY_TITLE, DROP_COMMON):
             found[b] = res
 
         is_common = len(found) == len(branches)
-        if DROP_COMMON and is_common:
+        if drop_common and is_common:
             continue
 
         data = ( commitid, cache.get_title(commitid), found )

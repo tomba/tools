@@ -6,8 +6,8 @@ import argparse
 import range_compare
 
 parser = argparse.ArgumentParser()
-parser.add_argument('range', help='Commit range of your commits (e.g. v6.8..mybranch)')
-parser.add_argument('upstream', help='Upstream branch/tag (e.g. v6.10)')
+parser.add_argument('topic', help='Your topic branch (commit or commit range) (e.g. mybranch or v6.8..mybranch)')
+parser.add_argument('upstream', help='Upstream (commit or commit range) (e.g. v6.10 or v6.9..v6.10)')
 parser.add_argument('-a', '--all', action='store_true', default=False, help='Show also upstreamed commits in range')
 args = parser.parse_args()
 
@@ -22,19 +22,17 @@ def is_empty_commit(commitid):
     return t1 == t2
 
 def main():
-    head = range_compare.run(f'git rev-list -1 {args.range}')
-    merge_base = range_compare.run(f'git merge-base {head} {args.upstream}')
+    topic_head = range_compare.run(f'git rev-list -1 {args.topic}')
+    upstream_head = range_compare.run(f'git rev-list -1 {args.upstream}')
+    merge_base = range_compare.run(f'git merge-base {topic_head} {upstream_head}')
 
-    BRANCHES = {
-        'topic': args.range,
-        'upstream': f'{merge_base}..{args.upstream}',
+    branches = {
+        'topic': f'{args.topic} ^{merge_base}',
+        'upstream': f'{args.upstream} ^{merge_base}',
     }
 
-    SHOW_ONLY_BRANCH = 'topic'
-    MATCH_BY_TITLE = True
-    DROP_COMMON = not args.all
-
-    datas = range_compare.range_compare(BRANCHES, SHOW_ONLY_BRANCH, MATCH_BY_TITLE, DROP_COMMON)
+    datas = range_compare.range_compare(branches, show_only_branch='topic',
+                                        match_by_title=True, drop_common=not args.all)
 
     for data in datas:
         commitid = shorten_commitid(data[0])
