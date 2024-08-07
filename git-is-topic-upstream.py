@@ -5,12 +5,6 @@
 import argparse
 import range_compare
 
-parser = argparse.ArgumentParser()
-parser.add_argument('topic', help='Your topic branch (commit or commit range) (e.g. mybranch or v6.8..mybranch)')
-parser.add_argument('upstream', help='Upstream (commit or commit range) (e.g. v6.10 or v6.9..v6.10)')
-parser.add_argument('-a', '--all', action='store_true', default=False, help='Show also upstreamed commits in range')
-args = parser.parse_args()
-
 def shorten_commitid(commitid):
     return range_compare.run(f'git rev-parse --short {commitid}')
 
@@ -22,6 +16,15 @@ def is_empty_commit(commitid):
     return t1 == t2
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('topic', help='Your topic branch (commit or commit range) (e.g. mybranch or v6.8..mybranch)')
+    parser.add_argument('upstream', help='Upstream (commit or commit range) (e.g. v6.10 or v6.9..v6.10)')
+    parser.add_argument('-a', '--all', action='store_true', default=False, help='Show also upstreamed commits in range')
+    parser.add_argument('-v', '--verbose', action='store_true', default=False)
+    args = parser.parse_args()
+
+    range_compare.VERBOSE = args.verbose
+
     topic_head = range_compare.run(f'git rev-list -1 {args.topic}')
     upstream_head = range_compare.run(f'git rev-list -1 {args.upstream}')
     merge_base = range_compare.run(f'git merge-base {topic_head} {upstream_head}')
