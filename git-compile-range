@@ -1,0 +1,68 @@
+#!/bin/sh
+
+# git-compile-range "ninja -C build" <git-rev-range>
+# git-compile-range "kconfig && kmake" <git-rev-range>
+# git compile-range "(kconfig && kmake drivers/media/) > /dev/null" ec0f247555d9..
+
+BUILD=$1
+RANGE=$2
+
+usage()
+{
+	echo "Usage: git-compile-range <build-command> <git-rev-range>"
+	echo "Examples:"
+	echo '    git-compile-range "ninja -C build" <git-rev-range>'
+	echo '    git-compile-range "kconfig && kmake" <git-rev-range>'
+	echo '    git compile-range "(kconfig && kmake drivers/media/) > /dev/null" ec0f247555d9..'
+	exit 1
+}
+
+if [ -z "$BUILD" -o -z "$RANGE" ]; then
+	usage
+fi
+
+do_make()
+{
+	bash -c "$BUILD"
+}
+
+set -e
+
+echo BUILD=$BUILD RANGE=$RANGE
+
+OLD_BRANCH=`git name-rev --name-only HEAD`
+
+COMMITS=$(git rev-list --reverse $RANGE)
+
+NUM_COMMITS=$(echo "$COMMITS" | wc -l)
+
+if [ $NUM_COMMITS -gt 200 ]; then
+	echo WARNING: excessive amount of commits: $NUM_COMMITS
+	exit 1
+fi
+
+cleanup()
+{
+    rv=$?
+
+    if [ $rv -eq 0 ]; then
+    	echo Build OK
+    else
+    	echo Build **FAILED**
+    fi
+
+    echo restoring branch to $OLD_BRANCH
+    git checkout $OLD_BRANCH
+    git branch -D auto-make
+
+    exit $rv
+}
+trap cleanup 0 1 2 3 6 15
+
+git checkout -b auto-make
+
+for id in $COMMITS; do
+	git --no-pager log --oneline -1 $id
+	git reset -q --hard $id
+	do_make
+done

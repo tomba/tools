@@ -1,0 +1,8 @@
+#!/bin/sh
+
+files=$(git status -s | egrep "^ M " | cut -d " " -f 3)
+
+for f in $files; do
+	git commit -m "$f: $1" $f
+done
+
