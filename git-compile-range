@@ -1,8 +1,24 @@
-#!/bin/sh
+#!/bin/bash
 
 # git-compile-range "ninja -C build" <git-rev-range>
 # git-compile-range "kconfig && kmake" <git-rev-range>
 # git compile-range "(kconfig && kmake drivers/media/) > /dev/null" ec0f247555d9..
+
+OPTSTRING=":w"
+
+while getopts ${OPTSTRING} opt; do
+	case ${opt} in
+		w)
+			USE_WORKTREE=1
+			;;
+		?)
+			echo "Invalid option: -${OPTARG}."
+			exit 1
+			;;
+	esac
+done
+
+shift $((OPTIND-1))
 
 BUILD=$1
 RANGE=$2
@@ -21,14 +37,7 @@ if [ -z "$BUILD" -o -z "$RANGE" ]; then
 	usage
 fi
 
-do_make()
-{
-	bash -c "$BUILD"
-}
-
 set -e
-
-echo BUILD=$BUILD RANGE=$RANGE
 
 OLD_BRANCH=`git name-rev --name-only HEAD`
 
@@ -41,28 +50,52 @@ if [ $NUM_COMMITS -gt 200 ]; then
 	exit 1
 fi
 
+echo BUILD=${BUILD} RANGE=${RANGE} NUM_COMMITS=${NUM_COMMITS}
+
+if [ -v USE_WORKTREE ]; then
+	WORK_DIR=auto-make
+	echo Creating worktree at ${WORK_DIR}
+	git worktree add --detach ${WORK_DIR}
+else
+	WORK_DIR=./
+	echo Checkout detached HEAD
+	git checkout --detach
+fi
+
 cleanup()
 {
-    rv=$?
+	rv=$?
 
-    if [ $rv -eq 0 ]; then
-    	echo Build OK
-    else
-    	echo Build **FAILED**
-    fi
+	if [ -v USE_WORKTREE ]; then
+		echo Removing worktree at ${WORK_DIR}
+		git worktree remove -f ${WORK_DIR}
+	else
+		echo Restoring branch to $OLD_BRANCH
+		git checkout ${OLD_BRANCH}
+	fi
 
-    echo restoring branch to $OLD_BRANCH
-    git checkout $OLD_BRANCH
-    git branch -D auto-make
-
-    exit $rv
+	if [ $rv -eq 0 ]; then
+		echo Build **OK**
+	else
+		echo Build **FAILED**
+	fi
 }
-trap cleanup 0 1 2 3 6 15
+trap cleanup EXIT
 
-git checkout -b auto-make
+cleanup_err()
+{
+	echo "**ERROR**"
+}
+trap cleanup_err ERR
+
+cleanup_int()
+{
+	echo "**INTERRUPT**"
+}
+trap cleanup_int INT
 
 for id in $COMMITS; do
-	git --no-pager log --oneline -1 $id
-	git reset -q --hard $id
-	do_make
+	git -C ${WORK_DIR} --no-pager log --oneline -1 $id
+	git -C ${WORK_DIR} reset -q --hard $id
+	bash -c "cd ${WORK_DIR}; $BUILD"
 done
