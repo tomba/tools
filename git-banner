@@ -1,6 +1,6 @@
 #!/bin/bash
 
-columns=60
+columns=70
 line="$*"
 
 if [ -n "$line" ]; then

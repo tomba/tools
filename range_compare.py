@@ -103,6 +103,13 @@ def collect_commits(commitrange):
 def shorten_commitid(commitid):
     return run(f'git rev-parse --short {commitid}')
 
+class Result:
+    def __init__(self, commitid: str, title: str, found):
+        self.commitid = commitid
+        self.title = title
+        # {'upstream': ('2c377d8a71db32d4125d30b3641f2bc51c6850ca', 'CommitID')}
+        self.found = found
+
 def range_compare(branches, show_only_branch, match_by_title, drop_common):
     # Collect commits
 
@@ -180,7 +187,7 @@ def range_compare(branches, show_only_branch, match_by_title, drop_common):
         if drop_common and is_common:
             continue
 
-        data = ( commitid, cache.get_title(commitid), found )
+        data = Result(commitid, cache.get_title(commitid), found)
 
         datas.append(data)
 
